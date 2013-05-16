@@ -1,10 +1,28 @@
+/*
+ * Copyright (C) 2009 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.android.camera.stress;
+
+import com.android.camera.CameraActivity;
 
 import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.Intent;
-import android.os.Debug;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.test.InstrumentationTestCase;
 import android.test.suitebuilder.annotation.LargeTest;
 import android.util.Log;
@@ -22,27 +40,25 @@ public class CameraStartUp extends InstrumentationTestCase {
     private String TAG = "CameraStartUp";
     private static final String CAMERA_TEST_OUTPUT_FILE =
             Environment.getExternalStorageDirectory().toString() + "/mediaStressOut.txt";
-    private static final String CAMERA_PACKAGE_NAME = "com.google.android.camera";
-    private static final String CAMERA_ACTIVITY_NAME = "com.android.camera.Camera";
-    private static final String VIDEORECORDER_ACTIVITY_NAME = "com.android.camera.VideoCamera";
     private static int WAIT_TIME_FOR_PREVIEW = 1500; //1.5 second
 
     private long launchCamera() {
         long startupTime = 0;
         try {
             Intent intent = new Intent(Intent.ACTION_MAIN);
-            intent.setClassName(CAMERA_PACKAGE_NAME, CAMERA_ACTIVITY_NAME);
+            intent.setClass(getInstrumentation().getTargetContext(), CameraActivity.class);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             long beforeStart = System.currentTimeMillis();
             Instrumentation inst = getInstrumentation();
             Activity cameraActivity = inst.startActivitySync(intent);
             long cameraStarted = System.currentTimeMillis();
+            Thread.sleep(WAIT_TIME_FOR_PREVIEW);
             cameraActivity.finish();
             startupTime = cameraStarted - beforeStart;
             Thread.sleep(1000);
             Log.v(TAG, "camera startup time: " + startupTime);
         } catch (Exception e) {
-            Log.v(TAG, e.toString());
+            Log.v(TAG, "Got exception", e);
             fail("Fails to get the output file");
         }
         return startupTime;
@@ -52,8 +68,8 @@ public class CameraStartUp extends InstrumentationTestCase {
         long startupTime = 0;
 
         try {
-            Intent intent = new Intent(Intent.ACTION_MAIN);
-            intent.setClassName(CAMERA_PACKAGE_NAME, VIDEORECORDER_ACTIVITY_NAME);
+            Intent intent = new Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA);
+            intent.setClass(getInstrumentation().getTargetContext(), CameraActivity.class);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             long beforeStart = System.currentTimeMillis();
             Instrumentation inst = getInstrumentation();
@@ -66,7 +82,7 @@ public class CameraStartUp extends InstrumentationTestCase {
             Thread.sleep(WAIT_TIME_FOR_PREVIEW);
             Log.v(TAG, "video startup time: " + startupTime);
         } catch (Exception e) {
-            Log.v(TAG, e.toString());
+            Log.v(TAG, "Got exception", e);
             fail("Fails to launch video output file");
         }
         return startupTime;

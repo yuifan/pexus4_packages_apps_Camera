@@ -20,8 +20,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.util.AttributeSet;
-
-import com.android.camera.R;
+import android.util.Log;
+import android.util.TypedValue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,10 +31,10 @@ import java.util.List;
  * is limited.
  */
 public class ListPreference extends CameraPreference {
-
+    private static final String TAG = "ListPreference";
     private final String mKey;
     private String mValue;
-    private final String mDefaultValue;
+    private final CharSequence[] mDefaultValues;
 
     private CharSequence[] mEntries;
     private CharSequence[] mEntryValues;
@@ -48,7 +48,20 @@ public class ListPreference extends CameraPreference {
 
         mKey = Util.checkNotNull(
                 a.getString(R.styleable.ListPreference_key));
-        mDefaultValue = a.getString(R.styleable.ListPreference_defaultValue);
+
+        // We allow the defaultValue attribute to be a string or an array of
+        // strings. The reason we need multiple default values is that some
+        // of them may be unsupported on a specific platform (for example,
+        // continuous auto-focus). In that case the first supported value
+        // in the array will be used.
+        int attrDefaultValue = R.styleable.ListPreference_defaultValue;
+        TypedValue tv = a.peekValue(attrDefaultValue);
+        if (tv != null && tv.type == TypedValue.TYPE_REFERENCE) {
+            mDefaultValues = a.getTextArray(attrDefaultValue);
+        } else {
+            mDefaultValues = new CharSequence[1];
+            mDefaultValues[0] = a.getString(attrDefaultValue);
+        }
 
         setEntries(a.getTextArray(R.styleable.ListPreference_entries));
         setEntryValues(a.getTextArray(
@@ -78,10 +91,25 @@ public class ListPreference extends CameraPreference {
 
     public String getValue() {
         if (!mLoaded) {
-            mValue = getSharedPreferences().getString(mKey, mDefaultValue);
+            mValue = getSharedPreferences().getString(mKey,
+                    findSupportedDefaultValue());
             mLoaded = true;
         }
         return mValue;
+    }
+
+    // Find the first value in mDefaultValues which is supported.
+    private String findSupportedDefaultValue() {
+        for (int i = 0; i < mDefaultValues.length; i++) {
+            for (int j = 0; j < mEntryValues.length; j++) {
+                // Note that mDefaultValues[i] may be null (if unspecified
+                // in the xml file).
+                if (mEntryValues[j].equals(mDefaultValues[i])) {
+                    return mDefaultValues[i].toString();
+                }
+            }
+        }
+        return null;
     }
 
     public void setValue(String value) {
@@ -128,5 +156,26 @@ public class ListPreference extends CameraPreference {
         int size = entries.size();
         mEntries = entries.toArray(new CharSequence[size]);
         mEntryValues = entryValues.toArray(new CharSequence[size]);
+    }
+
+    public void filterDuplicated() {
+        ArrayList<CharSequence> entries = new ArrayList<CharSequence>();
+        ArrayList<CharSequence> entryValues = new ArrayList<CharSequence>();
+        for (int i = 0, len = mEntryValues.length; i < len; i++) {
+            if (!entries.contains(mEntries[i])) {
+                entries.add(mEntries[i]);
+                entryValues.add(mEntryValues[i]);
+            }
+        }
+        int size = entries.size();
+        mEntries = entries.toArray(new CharSequence[size]);
+        mEntryValues = entryValues.toArray(new CharSequence[size]);
+    }
+
+    public void print() {
+        Log.v(TAG, "Preference key=" + getKey() + ". value=" + getValue());
+        for (int i = 0; i < mEntryValues.length; i++) {
+            Log.v(TAG, "entryValues[" + i + "]=" + mEntryValues[i]);
+        }
     }
 }

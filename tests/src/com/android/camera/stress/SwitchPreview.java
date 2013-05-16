@@ -16,10 +16,11 @@
 
 package com.android.camera.stress;
 
-import com.android.camera.VideoCamera;
+import com.android.camera.CameraActivity;
 
 import android.app.Instrumentation;
 import android.content.Intent;
+import android.provider.MediaStore;
 import android.test.ActivityInstrumentationTestCase2;
 import android.test.suitebuilder.annotation.LargeTest;
 import android.os.Environment;
@@ -35,10 +36,10 @@ import java.io.FileWriter;
  *
  * adb shell am instrument \
  *    -e class com.android.camera.stress.SwitchPreview \
- *    -w com.android.camera.tests/com.android.camera.CameraStressTestRunner
+ *    -w com.android.camera.tests/com.android.camera.stress.CameraStressTestRunner
  *
  */
-public class SwitchPreview extends ActivityInstrumentationTestCase2 <VideoCamera>{
+public class SwitchPreview extends ActivityInstrumentationTestCase2 <CameraActivity>{
     private String TAG = "SwitchPreview";
     private static final int TOTAL_NUMBER_OF_SWITCHING = 200;
     private static final long WAIT_FOR_PREVIEW = 4000;
@@ -49,7 +50,7 @@ public class SwitchPreview extends ActivityInstrumentationTestCase2 <VideoCamera
     private FileWriter mfstream;
 
     public SwitchPreview() {
-        super("com.google.android.camera", VideoCamera.class);
+        super(CameraActivity.class);
     }
 
     @Override
@@ -71,7 +72,7 @@ public class SwitchPreview extends ActivityInstrumentationTestCase2 <VideoCamera
             mfstream = new FileWriter(CAMERA_TEST_OUTPUT_FILE, true);
             mOut = new BufferedWriter(mfstream);
         } catch (Exception e){
-            assertTrue("Camera Switch Mode",false);
+            assertTrue("Camera Switch Mode", false);
         }
     }
 
@@ -95,20 +96,22 @@ public class SwitchPreview extends ActivityInstrumentationTestCase2 <VideoCamera
             mOut.write("loop: ");
             for (int i=0; i< TOTAL_NUMBER_OF_SWITCHING; i++) {
                 Thread.sleep(WAIT_FOR_PREVIEW);
-                Intent intent = new Intent();
-                intent.setClassName("com.google.android.camera",
-                        "com.android.camera.VideoCamera");
+                Intent intent = new Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA);
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                intent.setClass(getInstrumentation().getTargetContext(),
+                        CameraActivity.class);
                 getActivity().startActivity(intent);
                 Thread.sleep(WAIT_FOR_PREVIEW);
-                intent.setClassName("com.google.android.camera",
-                "com.android.camera.Camera");
+                intent = new Intent();
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                intent.setClass(getInstrumentation().getTargetContext(),
+                        CameraActivity.class);
                 getActivity().startActivity(intent);
                 mOut.write(" ," + i);
                 mOut.flush();
             }
         } catch (Exception e){
-            Log.v(TAG, e.toString());
+            Log.v(TAG, "Got exception", e);
         }
-            assertTrue("testSwitchMode",true);
     }
 }

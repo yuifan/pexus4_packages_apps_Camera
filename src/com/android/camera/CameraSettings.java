@@ -16,18 +16,25 @@
 
 package com.android.camera;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
+import android.content.res.Resources;
+import android.content.res.TypedArray;
 import android.hardware.Camera.CameraInfo;
 import android.hardware.Camera.Parameters;
 import android.hardware.Camera.Size;
 import android.media.CamcorderProfile;
+import android.util.FloatMath;
 import android.util.Log;
+
+import com.android.gallery3d.common.ApiHelper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  *  Provides utilities and keys for Camera settings.
@@ -39,47 +46,38 @@ public class CameraSettings {
     public static final String KEY_LOCAL_VERSION = "pref_local_version_key";
     public static final String KEY_RECORD_LOCATION = RecordLocationPreference.KEY;
     public static final String KEY_VIDEO_QUALITY = "pref_video_quality_key";
+    public static final String KEY_VIDEO_TIME_LAPSE_FRAME_INTERVAL = "pref_video_time_lapse_frame_interval_key";
     public static final String KEY_PICTURE_SIZE = "pref_camera_picturesize_key";
     public static final String KEY_JPEG_QUALITY = "pref_camera_jpegquality_key";
     public static final String KEY_FOCUS_MODE = "pref_camera_focusmode_key";
     public static final String KEY_FLASH_MODE = "pref_camera_flashmode_key";
     public static final String KEY_VIDEOCAMERA_FLASH_MODE = "pref_camera_video_flashmode_key";
-    public static final String KEY_COLOR_EFFECT = "pref_camera_coloreffect_key";
     public static final String KEY_WHITE_BALANCE = "pref_camera_whitebalance_key";
     public static final String KEY_SCENE_MODE = "pref_camera_scenemode_key";
     public static final String KEY_EXPOSURE = "pref_camera_exposure_key";
+    public static final String KEY_VIDEO_EFFECT = "pref_video_effect_key";
     public static final String KEY_CAMERA_ID = "pref_camera_id_key";
-
-    private static final String VIDEO_QUALITY_HIGH = "high";
-    private static final String VIDEO_QUALITY_MMS = "mms";
-    private static final String VIDEO_QUALITY_YOUTUBE = "youtube";
+    public static final String KEY_CAMERA_HDR = "pref_camera_hdr_key";
+    public static final String KEY_CAMERA_FIRST_USE_HINT_SHOWN = "pref_camera_first_use_hint_shown_key";
+    public static final String KEY_VIDEO_FIRST_USE_HINT_SHOWN = "pref_video_first_use_hint_shown_key";
 
     public static final String EXPOSURE_DEFAULT_VALUE = "0";
 
-    public static final int CURRENT_VERSION = 4;
-    public static final int CURRENT_LOCAL_VERSION = 1;
+    public static final int CURRENT_VERSION = 5;
+    public static final int CURRENT_LOCAL_VERSION = 2;
 
-    // max video duration in seconds for mms and youtube.
-    private static final int MMS_VIDEO_DURATION = CamcorderProfile.get(CamcorderProfile.QUALITY_LOW).duration;
-    private static final int YOUTUBE_VIDEO_DURATION = 10 * 60; // 10 mins
-    private static final int DEFAULT_VIDEO_DURATION = 30 * 60; // 10 mins
-
-    public static final String DEFAULT_VIDEO_QUALITY_VALUE = "high";
-
-    // MMS video length
-    public static final int DEFAULT_VIDEO_DURATION_VALUE = -1;
-
-    @SuppressWarnings("unused")
     private static final String TAG = "CameraSettings";
 
     private final Context mContext;
     private final Parameters mParameters;
     private final CameraInfo[] mCameraInfo;
+    private final int mCameraId;
 
     public CameraSettings(Activity activity, Parameters parameters,
-                          CameraInfo[] cameraInfo) {
+                          int cameraId, CameraInfo[] cameraInfo) {
         mContext = activity;
         mParameters = parameters;
+        mCameraId = cameraId;
         mCameraInfo = cameraInfo;
     }
 
@@ -87,8 +85,20 @@ public class CameraSettings {
         PreferenceInflater inflater = new PreferenceInflater(mContext);
         PreferenceGroup group =
                 (PreferenceGroup) inflater.inflate(preferenceRes);
-        initPreference(group);
+        if (mParameters != null) initPreference(group);
         return group;
+    }
+
+    @TargetApi(ApiHelper.VERSION_CODES.HONEYCOMB)
+    public static String getDefaultVideoQuality(int cameraId,
+            String defaultQuality) {
+        if (ApiHelper.HAS_FINE_RESOLUTION_QUALITY_LEVELS) {
+            if (CamcorderProfile.hasProfile(
+                    cameraId, Integer.valueOf(defaultQuality))) {
+                return defaultQuality;
+            }
+        }
+        return Integer.toString(CamcorderProfile.QUALITY_HIGH);
     }
 
     public static void initialCameraPictureSize(
@@ -122,7 +132,7 @@ public class CameraSettings {
         if (index == NOT_FOUND) return false;
         int width = Integer.parseInt(candidate.substring(0, index));
         int height = Integer.parseInt(candidate.substring(index + 1));
-        for (Size size: supported) {
+        for (Size size : supported) {
             if (size.width == width && size.height == height) {
                 parameters.setPictureSize(width, height);
                 return true;
@@ -131,49 +141,46 @@ public class CameraSettings {
         return false;
     }
 
+    public static int getMaxVideoDuration(Context context) {
+        int duration = 0;  // in milliseconds, 0 means unlimited.
+        try {
+            duration = context.getResources().getInteger(R.integer.max_video_recording_length);
+        } catch (Resources.NotFoundException ex) {
+        }
+        return duration;
+    }
+
     private void initPreference(PreferenceGroup group) {
         ListPreference videoQuality = group.findPreference(KEY_VIDEO_QUALITY);
+        ListPreference timeLapseInterval = group.findPreference(KEY_VIDEO_TIME_LAPSE_FRAME_INTERVAL);
         ListPreference pictureSize = group.findPreference(KEY_PICTURE_SIZE);
         ListPreference whiteBalance =  group.findPreference(KEY_WHITE_BALANCE);
-        ListPreference colorEffect = group.findPreference(KEY_COLOR_EFFECT);
         ListPreference sceneMode = group.findPreference(KEY_SCENE_MODE);
         ListPreference flashMode = group.findPreference(KEY_FLASH_MODE);
         ListPreference focusMode = group.findPreference(KEY_FOCUS_MODE);
-        ListPreference exposure = group.findPreference(KEY_EXPOSURE);
-        IconListPreference cameraId =
-                (IconListPreference)group.findPreference(KEY_CAMERA_ID);
+        IconListPreference exposure =
+                (IconListPreference) group.findPreference(KEY_EXPOSURE);
+        IconListPreference cameraIdPref =
+                (IconListPreference) group.findPreference(KEY_CAMERA_ID);
         ListPreference videoFlashMode =
                 group.findPreference(KEY_VIDEOCAMERA_FLASH_MODE);
+        ListPreference videoEffect = group.findPreference(KEY_VIDEO_EFFECT);
+        ListPreference cameraHdr = group.findPreference(KEY_CAMERA_HDR);
 
         // Since the screen could be loaded from different resources, we need
         // to check if the preference is available here
         if (videoQuality != null) {
-            // Modify video duration settings.
-            // The first entry is for MMS video duration, and we need to fill
-            // in the device-dependent value (in seconds).
-            CharSequence[] entries = videoQuality.getEntries();
-            CharSequence[] values = videoQuality.getEntryValues();
-            for (int i = 0; i < entries.length; ++i) {
-                if (VIDEO_QUALITY_MMS.equals(values[i])) {
-                    entries[i] = entries[i].toString().replace(
-                            "30", Integer.toString(MMS_VIDEO_DURATION));
-                    break;
-                }
-            }
+            filterUnsupportedOptions(group, videoQuality, getSupportedVideoQuality());
         }
 
-        // Filter out unsupported settings / options
         if (pictureSize != null) {
             filterUnsupportedOptions(group, pictureSize, sizeListToStringList(
                     mParameters.getSupportedPictureSizes()));
+            filterSimilarPictureSize(group, pictureSize);
         }
         if (whiteBalance != null) {
             filterUnsupportedOptions(group,
                     whiteBalance, mParameters.getSupportedWhiteBalance());
-        }
-        if (colorEffect != null) {
-            filterUnsupportedOptions(group,
-                    colorEffect, mParameters.getSupportedColorEffects());
         }
         if (sceneMode != null) {
             filterUnsupportedOptions(group,
@@ -184,19 +191,44 @@ public class CameraSettings {
                     flashMode, mParameters.getSupportedFlashModes());
         }
         if (focusMode != null) {
-            filterUnsupportedOptions(group,
-                    focusMode, mParameters.getSupportedFocusModes());
+            if (!Util.isFocusAreaSupported(mParameters)) {
+                filterUnsupportedOptions(group,
+                        focusMode, mParameters.getSupportedFocusModes());
+            } else {
+                // Remove the focus mode if we can use tap-to-focus.
+                removePreference(group, focusMode.getKey());
+            }
         }
         if (videoFlashMode != null) {
             filterUnsupportedOptions(group,
                     videoFlashMode, mParameters.getSupportedFlashModes());
         }
         if (exposure != null) buildExposureCompensation(group, exposure);
-        if (cameraId != null) buildCameraId(group, cameraId);
+        if (cameraIdPref != null) buildCameraId(group, cameraIdPref);
+
+        if (timeLapseInterval != null) {
+            if (ApiHelper.HAS_TIME_LAPSE_RECORDING) {
+                resetIfInvalid(timeLapseInterval);
+            } else {
+                removePreference(group, timeLapseInterval.getKey());
+            }
+        }
+        if (videoEffect != null) {
+            if (ApiHelper.HAS_EFFECTS_RECORDING) {
+                initVideoEffect(group, videoEffect);
+                resetIfInvalid(videoEffect);
+            } else {
+                filterUnsupportedOptions(group, videoEffect, null);
+            }
+        }
+        if (cameraHdr != null && (!ApiHelper.HAS_CAMERA_HDR
+                    || !Util.isCameraHdrSupported(mParameters))) {
+            removePreference(group, cameraHdr.getKey());
+        }
     }
 
     private void buildExposureCompensation(
-            PreferenceGroup group, ListPreference exposure) {
+            PreferenceGroup group, IconListPreference exposure) {
         int max = mParameters.getMaxExposureCompensation();
         int min = mParameters.getMinExposureCompensation();
         if (max == 0 && min == 0) {
@@ -206,50 +238,39 @@ public class CameraSettings {
         float step = mParameters.getExposureCompensationStep();
 
         // show only integer values for exposure compensation
-        int maxValue = (int) Math.floor(max * step);
-        int minValue = (int) Math.ceil(min * step);
+        int maxValue = (int) FloatMath.floor(max * step);
+        int minValue = (int) FloatMath.ceil(min * step);
         CharSequence entries[] = new CharSequence[maxValue - minValue + 1];
         CharSequence entryValues[] = new CharSequence[maxValue - minValue + 1];
+        int[] icons = new int[maxValue - minValue + 1];
+        TypedArray iconIds = mContext.getResources().obtainTypedArray(
+                R.array.pref_camera_exposure_icons);
         for (int i = minValue; i <= maxValue; ++i) {
             entryValues[maxValue - i] = Integer.toString(Math.round(i / step));
             StringBuilder builder = new StringBuilder();
             if (i > 0) builder.append('+');
             entries[maxValue - i] = builder.append(i).toString();
+            icons[maxValue - i] = iconIds.getResourceId(3 + i, 0);
         }
+        exposure.setUseSingleIcon(true);
         exposure.setEntries(entries);
         exposure.setEntryValues(entryValues);
+        exposure.setLargeIconIds(icons);
     }
 
     private void buildCameraId(
-            PreferenceGroup group, IconListPreference cameraId) {
+            PreferenceGroup group, IconListPreference preference) {
         int numOfCameras = mCameraInfo.length;
         if (numOfCameras < 2) {
-            removePreference(group, cameraId.getKey());
+            removePreference(group, preference.getKey());
             return;
         }
 
-        CharSequence entries[] = new CharSequence[numOfCameras];
-        CharSequence entryValues[] = new CharSequence[numOfCameras];
-        int[] iconIds = new int[numOfCameras];
-        int[] largeIconIds = new int[numOfCameras];
-        for (int i = 0; i < numOfCameras; i++) {
-            entryValues[i] = Integer.toString(i);
-            if (mCameraInfo[i].facing == CameraInfo.CAMERA_FACING_FRONT) {
-                entries[i] = mContext.getString(
-                        R.string.pref_camera_id_entry_front);
-                iconIds[i] = R.drawable.ic_menuselect_camera_facing_front;
-                largeIconIds[i] = R.drawable.ic_viewfinder_camera_facing_front;
-            } else {
-                entries[i] = mContext.getString(
-                        R.string.pref_camera_id_entry_back);
-                iconIds[i] = R.drawable.ic_menuselect_camera_facing_back;
-                largeIconIds[i] = R.drawable.ic_viewfinder_camera_facing_back;
-            }
+        CharSequence[] entryValues = new CharSequence[numOfCameras];
+        for (int i = 0; i < numOfCameras; ++i) {
+            entryValues[i] = "" + i;
         }
-        cameraId.setEntries(entries);
-        cameraId.setEntryValues(entryValues);
-        cameraId.setIconIds(iconIds);
-        cameraId.setLargeIconIds(largeIconIds);
+        preference.setEntryValues(entryValues);
     }
 
     private static boolean removePreference(PreferenceGroup group, String key) {
@@ -272,8 +293,6 @@ public class CameraSettings {
     private void filterUnsupportedOptions(PreferenceGroup group,
             ListPreference pref, List<String> supported) {
 
-        CharSequence[] allEntries = pref.getEntries();
-
         // Remove the preference if the parameter is not supported or there is
         // only one options for the settings.
         if (supported == null || supported.size() <= 1) {
@@ -287,6 +306,20 @@ public class CameraSettings {
             return;
         }
 
+        resetIfInvalid(pref);
+    }
+
+    private void filterSimilarPictureSize(PreferenceGroup group,
+            ListPreference pref) {
+        pref.filterDuplicated();
+        if (pref.getEntries().length <= 1) {
+            removePreference(group, pref.getKey());
+            return;
+        }
+        resetIfInvalid(pref);
+    }
+
+    private void resetIfInvalid(ListPreference pref) {
         // Set the value to the first entry if it is invalid.
         String value = pref.getValue();
         if (pref.findIndexOfValue(value) == NOT_FOUND) {
@@ -297,7 +330,7 @@ public class CameraSettings {
     private static List<String> sizeListToStringList(List<Size> sizes) {
         ArrayList<String> list = new ArrayList<String>();
         for (Size size : sizes) {
-            list.add(String.format("%dx%d", size.width, size.height));
+            list.add(String.format(Locale.ENGLISH, "%dx%d", size.width, size.height));
         }
         return list;
     }
@@ -310,12 +343,23 @@ public class CameraSettings {
             version = 0;
         }
         if (version == CURRENT_LOCAL_VERSION) return;
+
         SharedPreferences.Editor editor = pref.edit();
+        if (version == 1) {
+            // We use numbers to represent the quality now. The quality definition is identical to
+            // that of CamcorderProfile.java.
+            editor.remove("pref_video_quality_key");
+        }
         editor.putInt(KEY_LOCAL_VERSION, CURRENT_LOCAL_VERSION);
         editor.apply();
     }
 
     public static void upgradeGlobalPreferences(SharedPreferences pref) {
+        upgradeOldVersion(pref);
+        upgradeCameraId(pref);
+    }
+
+    private static void upgradeOldVersion(SharedPreferences pref) {
         int version;
         try {
             version = pref.getInt(KEY_VERSION, 0);
@@ -356,27 +400,23 @@ public class CameraSettings {
             editor.remove("pref_camera_videoquality_key");
             editor.remove("pref_camera_video_duration_key");
         }
+
         editor.putInt(KEY_VERSION, CURRENT_VERSION);
         editor.apply();
     }
 
-    public static void upgradeAllPreferences(ComboPreferences pref) {
-        upgradeGlobalPreferences(pref.getGlobal());
-        upgradeLocalPreferences(pref.getLocal());
-    }
+    private static void upgradeCameraId(SharedPreferences pref) {
+        // The id stored in the preference may be out of range if we are running
+        // inside the emulator and a webcam is removed.
+        // Note: This method accesses the global preferences directly, not the
+        // combo preferences.
+        int cameraId = readPreferredCameraId(pref);
+        if (cameraId == 0) return;  // fast path
 
-    public static boolean getVideoQuality(String quality) {
-        return VIDEO_QUALITY_YOUTUBE.equals(
-                quality) || VIDEO_QUALITY_HIGH.equals(quality);
-    }
-
-    public static int getVidoeDurationInMillis(String quality) {
-        if (VIDEO_QUALITY_MMS.equals(quality)) {
-            return MMS_VIDEO_DURATION * 1000;
-        } else if (VIDEO_QUALITY_YOUTUBE.equals(quality)) {
-            return YOUTUBE_VIDEO_DURATION * 1000;
+        int n = CameraHolder.instance().getNumberOfCameras();
+        if (cameraId < 0 || cameraId >= n) {
+            writePreferredCameraId(pref, 0);
         }
-        return DEFAULT_VIDEO_DURATION * 1000;
     }
 
     public static int readPreferredCameraId(SharedPreferences pref) {
@@ -388,5 +428,150 @@ public class CameraSettings {
         Editor editor = pref.edit();
         editor.putString(KEY_CAMERA_ID, Integer.toString(cameraId));
         editor.apply();
+    }
+
+    public static int readExposure(ComboPreferences preferences) {
+        String exposure = preferences.getString(
+                CameraSettings.KEY_EXPOSURE,
+                EXPOSURE_DEFAULT_VALUE);
+        try {
+            return Integer.parseInt(exposure);
+        } catch (Exception ex) {
+            Log.e(TAG, "Invalid exposure: " + exposure);
+        }
+        return 0;
+    }
+
+    public static int readEffectType(SharedPreferences pref) {
+        String effectSelection = pref.getString(KEY_VIDEO_EFFECT, "none");
+        if (effectSelection.equals("none")) {
+            return EffectsRecorder.EFFECT_NONE;
+        } else if (effectSelection.startsWith("goofy_face")) {
+            return EffectsRecorder.EFFECT_GOOFY_FACE;
+        } else if (effectSelection.startsWith("backdropper")) {
+            return EffectsRecorder.EFFECT_BACKDROPPER;
+        }
+        Log.e(TAG, "Invalid effect selection: " + effectSelection);
+        return EffectsRecorder.EFFECT_NONE;
+    }
+
+    public static Object readEffectParameter(SharedPreferences pref) {
+        String effectSelection = pref.getString(KEY_VIDEO_EFFECT, "none");
+        if (effectSelection.equals("none")) {
+            return null;
+        }
+        int separatorIndex = effectSelection.indexOf('/');
+        String effectParameter =
+                effectSelection.substring(separatorIndex + 1);
+        if (effectSelection.startsWith("goofy_face")) {
+            if (effectParameter.equals("squeeze")) {
+                return EffectsRecorder.EFFECT_GF_SQUEEZE;
+            } else if (effectParameter.equals("big_eyes")) {
+                return EffectsRecorder.EFFECT_GF_BIG_EYES;
+            } else if (effectParameter.equals("big_mouth")) {
+                return EffectsRecorder.EFFECT_GF_BIG_MOUTH;
+            } else if (effectParameter.equals("small_mouth")) {
+                return EffectsRecorder.EFFECT_GF_SMALL_MOUTH;
+            } else if (effectParameter.equals("big_nose")) {
+                return EffectsRecorder.EFFECT_GF_BIG_NOSE;
+            } else if (effectParameter.equals("small_eyes")) {
+                return EffectsRecorder.EFFECT_GF_SMALL_EYES;
+            }
+        } else if (effectSelection.startsWith("backdropper")) {
+            // Parameter is a string that either encodes the URI to use,
+            // or specifies 'gallery'.
+            return effectParameter;
+        }
+
+        Log.e(TAG, "Invalid effect selection: " + effectSelection);
+        return null;
+    }
+
+    public static void restorePreferences(Context context,
+            ComboPreferences preferences, Parameters parameters) {
+        int currentCameraId = readPreferredCameraId(preferences);
+
+        // Clear the preferences of both cameras.
+        int backCameraId = CameraHolder.instance().getBackCameraId();
+        if (backCameraId != -1) {
+            preferences.setLocalId(context, backCameraId);
+            Editor editor = preferences.edit();
+            editor.clear();
+            editor.apply();
+        }
+        int frontCameraId = CameraHolder.instance().getFrontCameraId();
+        if (frontCameraId != -1) {
+            preferences.setLocalId(context, frontCameraId);
+            Editor editor = preferences.edit();
+            editor.clear();
+            editor.apply();
+        }
+
+        // Switch back to the preferences of the current camera. Otherwise,
+        // we may write the preference to wrong camera later.
+        preferences.setLocalId(context, currentCameraId);
+
+        upgradeGlobalPreferences(preferences.getGlobal());
+        upgradeLocalPreferences(preferences.getLocal());
+
+        // Write back the current camera id because parameters are related to
+        // the camera. Otherwise, we may switch to the front camera but the
+        // initial picture size is that of the back camera.
+        initialCameraPictureSize(context, parameters);
+        writePreferredCameraId(preferences, currentCameraId);
+    }
+
+    private ArrayList<String> getSupportedVideoQuality() {
+        ArrayList<String> supported = new ArrayList<String>();
+        // Check for supported quality
+        if (ApiHelper.HAS_FINE_RESOLUTION_QUALITY_LEVELS) {
+            getFineResolutionQuality(supported);
+        } else {
+            supported.add(Integer.toString(CamcorderProfile.QUALITY_HIGH));
+            CamcorderProfile high = CamcorderProfile.get(
+                    mCameraId, CamcorderProfile.QUALITY_HIGH);
+            CamcorderProfile low = CamcorderProfile.get(
+                    mCameraId, CamcorderProfile.QUALITY_LOW);
+            if (high.videoFrameHeight * high.videoFrameWidth >
+                    low.videoFrameHeight * low.videoFrameWidth) {
+                supported.add(Integer.toString(CamcorderProfile.QUALITY_LOW));
+            }
+        }
+
+        return supported;
+    }
+
+    @TargetApi(ApiHelper.VERSION_CODES.HONEYCOMB)
+    private void getFineResolutionQuality(ArrayList<String> supported) {
+        if (CamcorderProfile.hasProfile(mCameraId, CamcorderProfile.QUALITY_1080P)) {
+            supported.add(Integer.toString(CamcorderProfile.QUALITY_1080P));
+        }
+        if (CamcorderProfile.hasProfile(mCameraId, CamcorderProfile.QUALITY_720P)) {
+            supported.add(Integer.toString(CamcorderProfile.QUALITY_720P));
+        }
+        if (CamcorderProfile.hasProfile(mCameraId, CamcorderProfile.QUALITY_480P)) {
+            supported.add(Integer.toString(CamcorderProfile.QUALITY_480P));
+        }
+    }
+
+    private void initVideoEffect(PreferenceGroup group, ListPreference videoEffect) {
+        CharSequence[] values = videoEffect.getEntryValues();
+
+        boolean goofyFaceSupported =
+                EffectsRecorder.isEffectSupported(EffectsRecorder.EFFECT_GOOFY_FACE);
+        boolean backdropperSupported =
+                EffectsRecorder.isEffectSupported(EffectsRecorder.EFFECT_BACKDROPPER) &&
+                Util.isAutoExposureLockSupported(mParameters) &&
+                Util.isAutoWhiteBalanceLockSupported(mParameters);
+
+        ArrayList<String> supported = new ArrayList<String>();
+        for (CharSequence value : values) {
+            String effectSelection = value.toString();
+            if (!goofyFaceSupported && effectSelection.startsWith("goofy_face")) continue;
+            if (!backdropperSupported && effectSelection.startsWith("backdropper")) continue;
+            supported.add(effectSelection);
+        }
+
+        filterUnsupportedOptions(group, videoEffect, supported);
     }
 }

@@ -18,6 +18,7 @@ package com.android.camera;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.widget.ImageView;
 
 /**
@@ -26,6 +27,9 @@ import android.widget.ImageView;
  * pressed state changes.
  */
 public class ShutterButton extends ImageView {
+
+    private boolean mTouchEnabled = true;
+
     /**
      * A callback to be invoked when a ShutterButton's pressed state changes.
      */
@@ -33,29 +37,34 @@ public class ShutterButton extends ImageView {
         /**
          * Called when a ShutterButton has been pressed.
          *
-         * @param b The ShutterButton that was pressed.
+         * @param pressed The ShutterButton that was pressed.
          */
-        void onShutterButtonFocus(ShutterButton b, boolean pressed);
-        void onShutterButtonClick(ShutterButton b);
+        void onShutterButtonFocus(boolean pressed);
+        void onShutterButtonClick();
     }
 
     private OnShutterButtonListener mListener;
     private boolean mOldPressed;
 
-    public ShutterButton(Context context) {
-        super(context);
-    }
-
     public ShutterButton(Context context, AttributeSet attrs) {
         super(context, attrs);
     }
 
-    public ShutterButton(Context context, AttributeSet attrs, int defStyle) {
-        super(context, attrs, defStyle);
-    }
-
     public void setOnShutterButtonListener(OnShutterButtonListener listener) {
         mListener = listener;
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent m) {
+        if (mTouchEnabled) {
+            return super.dispatchTouchEvent(m);
+        } else {
+            return false;
+        }
+    }
+
+    public void enableTouch(boolean enable) {
+        mTouchEnabled = enable;
     }
 
     /**
@@ -74,7 +83,7 @@ public class ShutterButton extends ImageView {
                 //    focus pressed, optional camera pressed, focus released.
                 // We want to emulate this sequence of events with the shutter
                 // button. When clicking using a trackball button, the view
-                // system changes the the drawable state before posting click
+                // system changes the drawable state before posting click
                 // notification, so the sequence of events is:
                 //    pressed(true), optional click, pressed(false)
                 // When clicking using touch events, the view system changes the
@@ -91,6 +100,7 @@ public class ShutterButton extends ImageView {
                 // sees events in this sequence:
                 //     pressed(true), optional click, pressed(false)
                 post(new Runnable() {
+                    @Override
                     public void run() {
                         callShutterButtonFocus(pressed);
                     }
@@ -104,7 +114,7 @@ public class ShutterButton extends ImageView {
 
     private void callShutterButtonFocus(boolean pressed) {
         if (mListener != null) {
-            mListener.onShutterButtonFocus(this, pressed);
+            mListener.onShutterButtonFocus(pressed);
         }
     }
 
@@ -112,7 +122,7 @@ public class ShutterButton extends ImageView {
     public boolean performClick() {
         boolean result = super.performClick();
         if (mListener != null) {
-            mListener.onShutterButtonClick(this);
+            mListener.onShutterButtonClick();
         }
         return result;
     }

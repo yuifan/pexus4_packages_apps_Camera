@@ -16,7 +16,7 @@
 
 package com.android.camera.stress;
 
-import com.android.camera.Camera;
+import com.android.camera.CameraActivity;
 
 import android.app.Instrumentation;
 import android.os.Environment;
@@ -33,7 +33,7 @@ import java.io.FileWriter;
  *
  */
 
-public class CameraLatency extends ActivityInstrumentationTestCase2 <Camera> {
+public class CameraLatency extends ActivityInstrumentationTestCase2 <CameraActivity> {
     private String TAG = "CameraLatency";
     private static final int TOTAL_NUMBER_OF_IMAGECAPTURE = 20;
     private static final long WAIT_FOR_IMAGE_CAPTURE_TO_BE_TAKEN = 4000;
@@ -52,7 +52,7 @@ public class CameraLatency extends ActivityInstrumentationTestCase2 <Camera> {
     private long mAvgJpegCallbackFinishTime;
 
     public CameraLatency() {
-        super("com.google.android.camera", Camera.class);
+        super(CameraActivity.class);
     }
 
     @Override
@@ -70,26 +70,36 @@ public class CameraLatency extends ActivityInstrumentationTestCase2 <Camera> {
     public void testImageCapture() {
         Log.v(TAG, "start testImageCapture test");
         Instrumentation inst = getInstrumentation();
+        inst.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         try {
             for (int i = 0; i < TOTAL_NUMBER_OF_IMAGECAPTURE; i++) {
                 Thread.sleep(WAIT_FOR_IMAGE_CAPTURE_TO_BE_TAKEN);
-                inst.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
                 inst.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
                 Thread.sleep(WAIT_FOR_IMAGE_CAPTURE_TO_BE_TAKEN);
                 //skip the first measurement
                 if (i != 0) {
-                    Camera c = getActivity();
-                    mTotalAutoFocusTime += c.mAutoFocusTime;
-                    mTotalShutterLag += c.mShutterLag;
-                    mTotalShutterToPictureDisplayedTime +=
-                            c.mShutterToPictureDisplayedTime;
-                    mTotalPictureDisplayedToJpegCallbackTime +=
-                            c.mPictureDisplayedToJpegCallbackTime;
-                    mTotalJpegCallbackFinishTime += c.mJpegCallbackFinishTime;
+                    CameraActivity c = getActivity();
+
+                    // if any of the latency var accessor methods return -1 then the
+                    // camera is set to a different module other than PhotoModule so
+                    // skip the shot and try again
+                    if (c.getAutoFocusTime() != -1) {
+                        mTotalAutoFocusTime += c.getAutoFocusTime();
+                        mTotalShutterLag += c.getShutterLag();
+                        mTotalShutterToPictureDisplayedTime +=
+                                c.getShutterToPictureDisplayedTime();
+                        mTotalPictureDisplayedToJpegCallbackTime +=
+                                c.getPictureDisplayedToJpegCallbackTime();
+                        mTotalJpegCallbackFinishTime += c.getJpegCallbackFinishTime();
+                    }
+                    else {
+                        i--;
+                        continue;
+                    }
                 }
             }
         } catch (Exception e) {
-            Log.v(TAG, e.toString());
+            Log.v(TAG, "Got exception", e);
         }
         //ToDO: yslau
         //1) Need to get the baseline from the cupcake so that we can add the
@@ -134,7 +144,6 @@ public class CameraLatency extends ActivityInstrumentationTestCase2 <Camera> {
         Log.v(TAG, "Avg mPictureDisplayedToJpegCallbackTime = "
                 + mAvgPictureDisplayedToJpegCallbackTime);
         Log.v(TAG, "Avg mJpegCallbackFinishTime = " + mAvgJpegCallbackFinishTime);
-        assertTrue("testImageCapture", true);
     }
 }
 

@@ -16,51 +16,61 @@
 
 package com.android.camera;
 
-import android.app.Activity;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.util.AttributeSet;
-import android.util.DisplayMetrics;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
+import android.view.View;
+import android.view.ViewStub;
+import android.widget.RelativeLayout;
+
+import com.android.camera.ui.LayoutChangeHelper;
+import com.android.camera.ui.LayoutChangeNotifier;
+import com.android.gallery3d.common.ApiHelper;
 
 /**
- * A layout which handles the preview aspect ratio and the position of
- * the gripper.
+ * A layout which handles the preview aspect ratio.
  */
-public class PreviewFrameLayout extends ViewGroup {
-    private static final int MIN_HORIZONTAL_MARGIN = 10; // 10dp
+public class PreviewFrameLayout extends RelativeLayout implements LayoutChangeNotifier {
+
+    private static final String TAG = "CAM_preview";
 
     /** A callback to be invoked when the preview frame's size changes. */
     public interface OnSizeChangedListener {
-        public void onSizeChanged();
+        public void onSizeChanged(int width, int height);
     }
 
-    private double mAspectRatio = 4.0 / 3.0;
-    private FrameLayout mFrame;
-    private OnSizeChangedListener mSizeListener;
-    private final DisplayMetrics mMetrics = new DisplayMetrics();
+    private double mAspectRatio;
+    private View mBorder;
+    private OnSizeChangedListener mListener;
+    private LayoutChangeHelper mLayoutChangeHelper;
 
     public PreviewFrameLayout(Context context, AttributeSet attrs) {
         super(context, attrs);
-        ((Activity) context).getWindowManager()
-                .getDefaultDisplay().getMetrics(mMetrics);
-    }
-
-    public void setOnSizeChangedListener(OnSizeChangedListener listener) {
-        mSizeListener = listener;
+        setAspectRatio(4.0 / 3.0);
+        mLayoutChangeHelper = new LayoutChangeHelper(this);
     }
 
     @Override
     protected void onFinishInflate() {
-        mFrame = (FrameLayout) findViewById(R.id.frame);
-        if (mFrame == null) {
-            throw new IllegalStateException(
-                    "must provide child with id as \"frame\"");
+        mBorder = findViewById(R.id.preview_border);
+        if (ApiHelper.HAS_FACE_DETECTION) {
+            ViewStub faceViewStub = (ViewStub) findViewById(R.id.face_view_stub);
+            /* preview_frame_video.xml does not have face view stub, so we need to
+             * check that.
+             */
+            if (faceViewStub != null) {
+                faceViewStub.inflate();
+            }
         }
     }
 
     public void setAspectRatio(double ratio) {
         if (ratio <= 0.0) throw new IllegalArgumentException();
+
+        if (getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_PORTRAIT) {
+            ratio = 1 / ratio;
+        }
 
         if (mAspectRatio != ratio) {
             mAspectRatio = ratio;
@@ -68,36 +78,54 @@ public class PreviewFrameLayout extends ViewGroup {
         }
     }
 
+    public void showBorder(boolean enabled) {
+        mBorder.setVisibility(enabled ? View.VISIBLE : View.INVISIBLE);
+    }
+
+    public void fadeOutBorder() {
+        Util.fadeOut(mBorder);
+    }
+
+    @Override
+    protected void onMeasure(int widthSpec, int heightSpec) {
+        int previewWidth = MeasureSpec.getSize(widthSpec);
+        int previewHeight = MeasureSpec.getSize(heightSpec);
+
+        // Get the padding of the border background.
+        int hPadding = getPaddingLeft() + getPaddingRight();
+        int vPadding = getPaddingTop() + getPaddingBottom();
+
+        // Resize the preview frame with correct aspect ratio.
+        previewWidth -= hPadding;
+        previewHeight -= vPadding;
+
+        // Add the padding of the border.
+        previewWidth += hPadding;
+        previewHeight += vPadding;
+
+        // Ask children to follow the new preview dimension.
+        super.onMeasure(MeasureSpec.makeMeasureSpec(previewWidth, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(previewHeight, MeasureSpec.EXACTLY));
+    }
+
+    public void setOnSizeChangedListener(OnSizeChangedListener listener) {
+        mListener = listener;
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        if (mListener != null) mListener.onSizeChanged(w, h);
+    }
+
+    @Override
+    public void setOnLayoutChangeListener(
+            LayoutChangeNotifier.Listener listener) {
+        mLayoutChangeHelper.setOnLayoutChangeListener(listener);
+    }
+
     @Override
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
-        int frameWidth = getWidth();
-        int frameHeight = getHeight();
-
-        FrameLayout f = mFrame;
-        int horizontalPadding = f.getPaddingLeft() + f.getPaddingRight();
-        int verticalPadding = f.getPaddingBottom() + f.getPaddingTop();
-        int previewHeight = frameHeight - verticalPadding;
-        int previewWidth = frameWidth - horizontalPadding;
-
-        // resize frame and preview for aspect ratio
-        if (previewWidth > previewHeight * mAspectRatio) {
-            previewWidth = (int) (previewHeight * mAspectRatio + .5);
-        } else {
-            previewHeight = (int) (previewWidth / mAspectRatio + .5);
-        }
-
-        frameWidth = previewWidth + horizontalPadding;
-        frameHeight = previewHeight + verticalPadding;
-
-        int hSpace = ((r - l) - frameWidth) / 2;
-        int vSpace = ((b - t) - frameHeight) / 2;
-        mFrame.measure(
-                MeasureSpec.makeMeasureSpec(frameWidth, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(frameHeight, MeasureSpec.EXACTLY));
-        mFrame.layout(l + hSpace, t + vSpace, r - hSpace, b - vSpace);
-        if (mSizeListener != null) {
-            mSizeListener.onSizeChanged();
-        }
+        super.onLayout(changed, l, t, r, b);
+        mLayoutChangeHelper.onLayout(changed, l, t, r, b);
     }
 }
-

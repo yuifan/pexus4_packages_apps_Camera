@@ -25,8 +25,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
 
-import com.android.camera.R;
-
 /**
  * A on-screen hint is a view containing a little message for the user and will
  * be shown on the screen continuously.  This class helps you create and show
@@ -41,7 +39,6 @@ import com.android.camera.R;
  */
 public class OnScreenHint {
     static final String TAG = "OnScreenHint";
-    static final boolean LOCAL_LOGV = false;
 
     int mGravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
     int mX, mY;
@@ -56,14 +53,13 @@ public class OnScreenHint {
     private final Handler mHandler = new Handler();
 
     /**
-     * Construct an empty OnScreenHint object.  You must call {@link #setView}
-     * before you can call {@link #show}.
+     * Construct an empty OnScreenHint object.
      *
      * @param context  The context to use.  Usually your
      *                 {@link android.app.Application} or
      *                 {@link android.app.Activity} object.
      */
-    public OnScreenHint(Context context) {
+    private OnScreenHint(Context context) {
         mWM = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
         mY = context.getResources().getDimensionPixelSize(
                 R.dimen.hint_y_offset);
@@ -83,7 +79,7 @@ public class OnScreenHint {
      */
     public void show() {
         if (mNextView == null) {
-            throw new RuntimeException("setView must have been called");
+            throw new RuntimeException("View is not initialized");
         }
         mHandler.post(mShow);
     }
@@ -176,12 +172,14 @@ public class OnScreenHint {
     }
 
     private final Runnable mShow = new Runnable() {
+        @Override
         public void run() {
             handleShow();
         }
     };
 
     private final Runnable mHide = new Runnable() {
+        @Override
         public void run() {
             handleHide();
         }
